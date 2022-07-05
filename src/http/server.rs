@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
+    fmt::format,
     fs::File,
-    io::Write,
+    io::{Read, Write},
     net::{TcpListener, TcpStream},
     sync::{
         mpsc::{self, Receiver, Sender},
@@ -10,6 +11,8 @@ use std::{
     thread::{self, JoinHandle},
     time::Duration,
 };
+
+use regex::Regex;
 
 use crate::{
     http::common::{HttpRequest, HttpResponse, HttpStatus},
@@ -39,6 +42,7 @@ impl Server {
         address: String,
         log: &Log,
         sub_sender: Sender<Subscription>,
+        base_path: String,
     ) -> Result<Server, &'static str> {
         let logger = log.get_logger("server".to_string());
         let connection_pool = ConnectionPool::new(4);
@@ -51,9 +55,9 @@ impl Server {
                             Ok(stream) => {
                                 let request_logger = logger.create_from("connection".to_string());
                                 let ss = sub_sender.clone();
-
+                                let bp = base_path.clone();
                                 connection_pool
-                                    .execute(|| handle_connection(stream, request_logger, ss));
+                                    .execute(|| handle_connection(stream, request_logger, ss, bp));
                             }
                             Err(_) => todo!(),
                         };
@@ -103,25 +107,74 @@ impl Worker {
     }
 }
 
-fn handle_connection(mut stream: TcpStream, logger: Logger, sub_sender: Sender<Subscription>) {
+fn handle_connection(
+    mut stream: TcpStream,
+    logger: Logger,
+    sub_sender: Sender<Subscription>,
+    base_path: String,
+) {
     match HttpRequest::from_stream(&stream, &logger) {
         Ok(request) => match request.header.route.as_str() {
             "/ws/notify" => {
                 logger
                     .log_info(format!("Update notification requested"))
                     .unwrap();
-                handle_ws_connection(request, stream, sub_sender);
+                handle_ws_connection(request, stream, sub_sender, logger);
                 // TODO handle ws.
                 // Keep alive...
             }
-            _ => match File::open(get_path(request.header.route.clone())) {
-                Ok(_) => {}
+            route if route == "/" || route == "/index" || route == "/index.html" => {
+                match File::open(format!("{}/index.html", base_path)) {
+                    Ok(mut file) => {
+                        let mut buf = Vec::new();
+
+                        let mut doc = String::new();
+
+                        file.read_to_string(&mut doc).unwrap();
+
+                        file.read_to_end(&mut buf).unwrap();
+
+                        let mut response = HttpResponse::create(
+                            HttpStatus::Ok,
+                            "text/html".to_string(),
+                            HashMap::new(),
+                            Some(inject_script(&doc).as_bytes().to_vec()),
+                        );
+
+                        stream.write(&response.to_bytes()).unwrap();
+                    }
+                    Err(_) => todo!(),
+                }
+            }
+            _ => match File::open(get_path(format!(
+                "{}{}",
+                base_path,
+                request.header.route.clone()
+            ))) {
+                Ok(mut file) => {
+                    let mut buf = Vec::new();
+
+                    file.read_to_end(&mut buf).unwrap();
+
+                    let mut response = HttpResponse::create(
+                        HttpStatus::Ok,
+                        get_content_type(request.header.route.clone()),
+                        HashMap::new(),
+                        Some(buf),
+                    );
+
+                    stream.write(&&response.to_bytes()).unwrap();
+
+                    logger
+                        .log_info(format!("Request received. Route: {}", request.header.route))
+                        .unwrap();
+                }
                 Err(_) => {
                     let mut response = HttpResponse::create(
                         HttpStatus::NotFound,
                         "text/plain".to_string(),
                         HashMap::new(),
-                        None,
+                        Some(b"Not found".to_vec()),
                     );
 
                     stream.write(&response.to_bytes()).unwrap();
@@ -140,16 +193,17 @@ fn handle_ws_connection(
     mut request: HttpRequest,
     mut stream: TcpStream,
     sub_sender: Sender<Subscription>,
+    logger: Logger,
 ) {
-    println!("WS connection");
-    let mut b = request.to_bytes();
+    logger.log_debug("WS connection".to_string()).unwrap();
 
-    println!("{}", String::from_utf8(b.to_vec()).unwrap());
     match request.header.headers.get("SEC-WEBSOCKET-KEY") {
         Some(key) => {
-            println!("Key: {}", key);
+            logger.log_info(format!("Key: {}", key)).unwrap();
             let ws_handshake = ws::handle_handshake(key);
-            println!("Handshake: {}", ws_handshake);
+            logger
+                .log_debug(format!("Handshake: {}", ws_handshake))
+                .unwrap();
 
             let mut addition_headers = HashMap::new();
 
@@ -171,15 +225,40 @@ fn handle_ws_connection(
                     let (tx, rx) = mpsc::channel();
 
                     let thread = thread::spawn(move || loop {
-                        sub_sender.send(Subscription::new(tx.clone()));
+                        sub_sender.send(Subscription::new(tx.clone())).unwrap();
 
                         match rx.recv() {
                             Ok(notification) => {
-                                let d = b"File updated";
+                                let (data, len) = match notification {
+                                    crate::messaging::Notification::FileCreated(_) => {
+                                        (b"File created", 12)
+                                    }
+                                    crate::messaging::Notification::FileUpdated(_) => {
+                                        (b"File updated", 12)
+                                    }
+                                    crate::messaging::Notification::FileRemoved(_) => {
+                                        (b"File removed", 12)
+                                    }
+                                    crate::messaging::Notification::FileRenamed(_, _) => {
+                                        (b"File renamed", 12)
+                                    }
+                                };
 
-                                stream
-                                    .write(&ws::handle_write(&mut d.to_vec(), 12))
-                                    .unwrap();
+                                let result =
+                                    stream.write(&ws::handle_write(&mut data.to_vec(), len));
+
+                                match result {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        logger
+                                            .log_error(format!(
+                                                "Failed sending to client, Error {}",
+                                                e
+                                            ))
+                                            .unwrap();
+                                        break;
+                                    }
+                                };
                             }
                             Err(_) => (),
                         };
@@ -191,4 +270,22 @@ fn handle_ws_connection(
 
         None => todo!(),
     };
+}
+
+fn get_content_type(path: String) -> String {
+    match path {
+        _ if path.ends_with(".css") => "text/css".to_string(),
+        _ if path.ends_with(".js") => "application/javascript".to_string(),
+        _ if path.ends_with(".png") => "image/png".to_string(),
+        _ if path.ends_with(".jpg") || path.ends_with(".jpeg") => "image/jpeg".to_string(),
+        _ => "text/plain".to_string(),
+    }
+}
+
+fn inject_script(document: &String) -> String {
+    let re = Regex::new("</body>").unwrap();
+
+    let replace = "<script>var ws = new WebSocket('ws://127.0.0.1:8080/ws/notify'); ws.onopen = function(evt) { console.log('Connected'); };  ws.onmessage = function (evt) { location.reload();  };</script>\n</body>";
+
+    re.replace(document, replace).to_string()
 }

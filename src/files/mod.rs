@@ -29,11 +29,26 @@ impl FileWatcher {
                         match event {
                             notify::DebouncedEvent::NoticeWrite(_) => {}
                             notify::DebouncedEvent::NoticeRemove(_) => {}
-                            notify::DebouncedEvent::Create(e) => send_message(&sender, e),
-                            notify::DebouncedEvent::Write(e) => send_message(&sender, e),
+                            notify::DebouncedEvent::Create(e) => send_message(
+                                &sender,
+                                Notification::FileCreated(path_buf_to_string(e)),
+                            ),
+                            notify::DebouncedEvent::Write(e) => send_message(
+                                &sender,
+                                Notification::FileUpdated(path_buf_to_string(e)),
+                            ),
                             notify::DebouncedEvent::Chmod(_) => {}
-                            notify::DebouncedEvent::Remove(e) => send_message(&sender, e),
-                            notify::DebouncedEvent::Rename(_, _) => {}
+                            notify::DebouncedEvent::Remove(e) => send_message(
+                                &sender,
+                                Notification::FileRemoved(path_buf_to_string(e)),
+                            ),
+                            notify::DebouncedEvent::Rename(o, n) => send_message(
+                                &sender,
+                                Notification::FileRenamed(
+                                    path_buf_to_string(o),
+                                    path_buf_to_string(n),
+                                ),
+                            ),
                             notify::DebouncedEvent::Rescan => {}
                             notify::DebouncedEvent::Error(_, _) => todo!(),
                         };
@@ -49,11 +64,12 @@ impl FileWatcher {
     }
 }
 
-fn send_message(sender: &Sender<Notification>, path_buf: PathBuf) {
-    println!("Hmmm {:?}", path_buf);
-    let r = sender.send(Notification::FileUpdated(
-        path_buf.to_str().unwrap().to_string(),
-    ));
+fn path_buf_to_string(path_buf: PathBuf) -> String {
+    path_buf.to_str().unwrap().to_string()
+}
+
+fn send_message(sender: &Sender<Notification>, notification: Notification) {
+    let r = sender.send(notification);
 
     match r {
         Ok(_) => {}
