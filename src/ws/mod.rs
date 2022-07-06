@@ -1,5 +1,7 @@
 use sha1::{Digest, Sha1};
 
+/// Handle the WebSockets handshake and return a WebSockets key for use in the Sec-WebSocket-Accept
+//  http header.
 pub fn handle_handshake(key: &String) -> String {
     let mut hasher = Sha1::new();
 
@@ -8,6 +10,7 @@ pub fn handle_handshake(key: &String) -> String {
     base64::encode(hasher.finalize())
 }
 
+/// Handle creating a short WebSocket message to be send to a client.
 pub fn handle_write(data: &mut Vec<u8>, length: u8) -> Vec<u8> {
     let mut response = Vec::with_capacity(length as usize + 2);
     let fin: u8 = 0x80;
