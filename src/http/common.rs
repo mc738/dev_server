@@ -53,6 +53,11 @@ pub struct HttpResponseHeader {
 }
 
 impl HttpVerb {
+    /// Create a HttpVerb from a name.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the name is unknown.
     pub fn from_str(data: &str) -> Result<HttpVerb, &'static str> {
         match data.to_uppercase().as_str() {
             "GET" => Ok(HttpVerb::GET),
@@ -68,6 +73,7 @@ impl HttpVerb {
         }
     }
 
+    /// Returns a reference to the name of this [`HttpVerb`].
     pub fn get_str(&self) -> &'static str {
         match self {
             HttpVerb::GET => "GET",
@@ -84,6 +90,11 @@ impl HttpVerb {
 }
 
 impl HttpStatus {
+    /// Create a HttpStatus from a status code.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the status code is unknown.
     pub fn from_code(code: i16) -> Result<HttpStatus, &'static str> {
         match code {
             101 => Ok(HttpStatus::SwitchingProtocols),
@@ -97,6 +108,7 @@ impl HttpStatus {
         }
     }
 
+    /// Returns the status code of this [`HttpStatus`].
     pub fn get_code(&self) -> i16 {
         match self {
             HttpStatus::SwitchingProtocols => 101,
@@ -109,6 +121,7 @@ impl HttpStatus {
         }
     }
 
+    /// Returns a reference to the name of this [`HttpStatus`].
     pub fn get_str(&self) -> &'static str {
         match self {
             HttpStatus::SwitchingProtocols => "Switching Protocols",
@@ -123,6 +136,7 @@ impl HttpStatus {
 }
 
 impl HttpRequest {
+    /// Create a new HttpRequest.
     pub fn create(
         route: String,
         verb: HttpVerb,
@@ -141,6 +155,15 @@ impl HttpRequest {
         }
     }
 
+    /// Create a HttpRequest from a TcpStream.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stream can not be read or there is an issue with the logger.
+    ///
+    /// # Errors
+    ///
+    /// Does not currently error, however it should error instead of panic.
     pub fn from_stream(
         mut stream: &TcpStream,
         logger: &Logger,
@@ -179,6 +202,7 @@ impl HttpRequest {
         Ok(HttpRequest { header, body })
     }
 
+    /// Get the bytes of this [`HttpRequest`].
     pub fn to_bytes(&mut self) -> Vec<u8> {
         // Get the bytes for the header and append the response body.
         let mut bytes = self.header.to_bytes();
@@ -194,6 +218,7 @@ impl HttpRequest {
 }
 
 impl HttpRequestHeader {
+    /// Create a new HttpRequestHeader.
     pub fn create(
         route: String,
         verb: HttpVerb,
@@ -225,6 +250,11 @@ impl HttpRequestHeader {
         }
     }
 
+    /// Create a new HttpRequestHeader from a buffer.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the request header is larger than the buffer.
     pub fn create_from_buffer(
         buffer: [u8; 4096],
     ) -> Result<(HttpRequestHeader, usize), &'static str> {
@@ -249,6 +279,11 @@ impl HttpRequestHeader {
         Err("Request header larger than buffer")
     }
 
+    /// Parse a HttpRequestHeader from a string.
+    ///
+    /// # Errors
+    ///
+    /// This function will not return an error if the HttpVerb can not be created.
     pub fn parse_from_string(data: String) -> Result<HttpRequestHeader, &'static str> {
         let split_header: Vec<&str> = data.split("\r\n").collect();
 
@@ -263,8 +298,6 @@ impl HttpRequestHeader {
         let http_version = String::from(split_status_line[2]);
 
         for i in 1..split_header.len() {
-            //println!("Head: {}", split_header[i]);
-
             let split_item: Vec<&str> = split_header[i].split(": ").collect();
 
             // If the split item has more than 1 item, add a header.
@@ -293,6 +326,7 @@ impl HttpRequestHeader {
         })
     }
 
+    /// Returns the string of this [`HttpRequestHeader`].
     pub fn get_string(&self) -> String {
         let mut header_string = String::new();
 
@@ -315,6 +349,7 @@ impl HttpRequestHeader {
         header_string
     }
 
+    /// Get the bytes of this [`HttpRequestHeader`].
     pub fn to_bytes(&mut self) -> Vec<u8> {
         let mut bytes = Vec::from(self.get_string().as_bytes());
 
@@ -323,6 +358,7 @@ impl HttpRequestHeader {
 }
 
 impl HttpResponse {
+    /// Create a new HttpResponse.
     pub fn create(
         status: HttpStatus,
         content_type: String,
@@ -340,6 +376,15 @@ impl HttpResponse {
         }
     }
 
+    /// Create a new HttpResponse from a TcpStream.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stream can not be read.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the HttpResponseHeader can not be created.
     pub fn from_stream(
         mut stream: &TcpStream, /*, logger: &Logger*/
     ) -> Result<HttpResponse, &'static str> {
@@ -382,6 +427,7 @@ impl HttpResponse {
         Ok(HttpResponse { header, body })
     }
 
+    /// Returns the bytes of this [`HttpResponse`].
     pub fn to_bytes(&mut self) -> Vec<u8> {
         // Get the bytes for the header and append the response body.
         let mut bytes = self.header.to_bytes();
@@ -397,6 +443,7 @@ impl HttpResponse {
 }
 
 impl HttpResponseHeader {
+    /// Create a new HttpResponseHeader.
     pub fn create(
         status: HttpStatus,
         content_type: String,
@@ -426,6 +473,11 @@ impl HttpResponseHeader {
         }
     }
 
+    /// Create a new HttpResponseHeader from a bufffer.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the header is bigger than the buffer.
     pub fn create_from_buffer(
         buffer: [u8; 4096],
     ) -> Result<(HttpResponseHeader, usize), &'static str> {
@@ -450,6 +502,11 @@ impl HttpResponseHeader {
         Err("Request header larger than buffer")
     }
 
+    /// Parse a HttpResponseHeader from a string.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if HttpStatus can not be created.
     pub fn parse_from_string(data: String) -> Result<HttpResponseHeader, &'static str> {
         let split_header: Vec<&str> = data.split("\r\n").collect();
 
@@ -499,6 +556,7 @@ impl HttpResponseHeader {
         })
     }
 
+    /// Returns the string of this [`HttpResponseHeader`].
     pub fn get_string(&self) -> String {
         // Create the header.
         let mut header_string = String::new();
@@ -522,9 +580,10 @@ impl HttpResponseHeader {
         header_string
     }
 
+    /// Returns the bytes of this [`HttpResponseHeader`].
     pub fn to_bytes(&mut self) -> Vec<u8> {
         // Get the bytes for the header and append the response body.
-        let mut bytes = Vec::from(self.get_string());
+        let bytes = Vec::from(self.get_string());
 
         bytes
     }

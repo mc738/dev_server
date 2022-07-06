@@ -14,6 +14,12 @@ pub struct FileWatcher {
 }
 
 impl FileWatcher {
+    /// Start the file watcher. This will return a FileWatcher with the related thread's
+    /// JoinHandle.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an DebouncedEvent::Error is returned.
     pub fn start(sender: Sender<Notification>, base_path: String, log: &Log) -> FileWatcher {
         let (tx, rx) = mpsc::channel();
         let logger = log.get_logger("file_watcher".to_string());
@@ -64,10 +70,16 @@ impl FileWatcher {
     }
 }
 
+/// Convert a PathBuf to a String.
+///
+/// # Panics
+///
+/// Panics if the PathBuf contains non-UTF8 characters.
 fn path_buf_to_string(path_buf: PathBuf) -> String {
     path_buf.to_str().unwrap().to_string()
 }
 
+/// Send a notification message.
 fn send_message(sender: &Sender<Notification>, notification: Notification) {
     let r = sender.send(notification);
 

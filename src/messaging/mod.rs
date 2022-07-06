@@ -23,12 +23,19 @@ pub struct MessageHub {
 }
 
 impl MessageHub {
+    /// Start the [`MessageHub`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is an issue with the logger.
     pub fn start(
         receiver: Receiver<Subscription>,
         notifications: Receiver<Notification>,
         log: &Log,
     ) -> MessageHub {
         let mut subscribers: Vec<Sender<Notification>> = Vec::new();
+
+        // A vec to the index of any broken subscriptions, so the can be dropped.
         let mut dead_subs: Vec<usize> = Vec::new();
         let logger = log.get_logger("message_hub".to_string());
 
@@ -44,6 +51,7 @@ impl MessageHub {
                 Err(_) => {}
             };
 
+            // Check for notifications and send them to subscribers.
             match notifications.recv_timeout(Duration::from_secs(1)) {
                 Ok(notification) => {
                     logger
@@ -77,10 +85,10 @@ impl MessageHub {
                         dead_subs.clear();
                     };
                 }
-                Err(_) => {}
+                Err(_) => {
+                    // No notifications after timeout. Do nothing.
+                }
             };
-
-            // Send notifications to subscribers
         });
 
         MessageHub { thread }
@@ -88,6 +96,7 @@ impl MessageHub {
 }
 
 impl Subscription {
+    /// Creates a new [`Subscription`].
     pub fn new(sender: Sender<Notification>) -> Subscription {
         Subscription { sender }
     }
