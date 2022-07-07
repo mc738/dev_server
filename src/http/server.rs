@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    fmt::format,
     fs::File,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -9,7 +8,6 @@ use std::{
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
-    time::Duration,
 };
 
 use regex::Regex;
@@ -38,6 +36,11 @@ struct Worker {
 }
 
 impl Server {
+    /// Start the http server.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if TcpListener can not be bond to the address.
     pub fn start(
         address: String,
         log: &Log,
@@ -72,6 +75,7 @@ impl Server {
 }
 
 impl ConnectionPool {
+    /// Creates a new [`ConnectionPool`].
     fn new(size: usize) -> ConnectionPool {
         let mut workers = Vec::with_capacity(size);
 
@@ -97,6 +101,11 @@ impl ConnectionPool {
 }
 
 impl Worker {
+    /// Creates a new [`Worker`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if a lock can ot be gained on the receiver or a job received.
     fn new(id: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> Worker {
         let thread = thread::spawn(move || loop {
             let job = receiver.lock().unwrap().recv().unwrap();
@@ -107,6 +116,11 @@ impl Worker {
     }
 }
 
+/// Handle a connection from a client.
+///
+/// # Panics
+///
+/// Panics if an issue with the logger, a file can not be read or a failure to write to the stream.
 fn handle_connection(
     mut stream: TcpStream,
     logger: Logger,
@@ -120,8 +134,6 @@ fn handle_connection(
                     .log_info(format!("Update notification requested"))
                     .unwrap();
                 handle_ws_connection(request, stream, sub_sender, logger);
-                // TODO handle ws.
-                // Keep alive...
             }
             route if route == "/" || route == "/index" || route == "/index.html" => {
                 match File::open(format!("{}/index.html", base_path)) {
@@ -185,12 +197,18 @@ fn handle_connection(
     };
 }
 
+/// Get a file path from a route.
 fn get_path(route: String) -> String {
     route
 }
 
+/// Handle a WebSocket connection.
+///
+/// # Panics
+///
+/// Panics if a failure with the logger.
 fn handle_ws_connection(
-    mut request: HttpRequest,
+    request: HttpRequest,
     mut stream: TcpStream,
     sub_sender: Sender<Subscription>,
     logger: Logger,
@@ -272,6 +290,7 @@ fn handle_ws_connection(
     };
 }
 
+/// Get the content type from a path based on it's file extension.
 fn get_content_type(path: String) -> String {
     match path {
         _ if path.ends_with(".css") => "text/css".to_string(),
@@ -282,6 +301,11 @@ fn get_content_type(path: String) -> String {
     }
 }
 
+/// Inject the handler script into a html document.
+///
+/// # Panics
+///
+/// Panics if the regex can not be created.
 fn inject_script(document: &String) -> String {
     let re = Regex::new("</body>").unwrap();
 

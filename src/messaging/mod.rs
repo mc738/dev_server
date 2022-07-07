@@ -70,6 +70,7 @@ impl MessageHub {
                         };
                     }
 
+                    // Remove any dead subs.
                     if dead_subs.len() > 0 {
                         // Revserve so subs with a highest index are removed first.
                         // Example:
